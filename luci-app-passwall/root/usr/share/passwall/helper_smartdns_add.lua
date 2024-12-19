@@ -36,6 +36,7 @@ local RULES_PATH = "/usr/share/" .. appname .. "/rules"
 local FLAG_PATH = TMP_ACL_PATH .. "/" .. FLAG
 local config_lines = {}
 local tmp_lines = {}
+local USE_GEOVIEW = uci:get(appname, "@global_rules[0]", "enable_geoview")
 
 local function log(...)
 	if NO_LOGIC_LOG == "1" then
@@ -233,12 +234,18 @@ end
 
 --屏蔽列表
 local file_block_host = TMP_ACL_PATH .. "/block_host"
-if USE_BLOCK_LIST == "1" and not fs.access(file_block_host) then   --对自定义列表进行清洗
+if USE_BLOCK_LIST == "1" and not fs.access(file_block_host) then
 	local block_domain, lookup_block_domain = {}, {}
+	local geosite_arg = ""
 	for line in io.lines(RULES_PATH .. "/block_host") do
-		line = api.get_std_domain(line)
-		if line ~= "" and not line:find("#") then
-			insert_unique(block_domain, line, lookup_block_domain)
+		if not line:find("#") and line:find("geosite:") then
+			line = string.match(line, ":([^:]+)$")
+			geosite_arg = geosite_arg .. (geosite_arg ~= "" and "," or "") .. line
+		else
+			line = api.get_std_domain(line)
+			if line ~= "" and not line:find("#") then
+				insert_unique(block_domain, line, lookup_block_domain)
+			end
 		end
 	end
 	if #block_domain > 0 then
@@ -247,6 +254,10 @@ if USE_BLOCK_LIST == "1" and not fs.access(file_block_host) then   --对自定�
 			f_out:write(block_domain[i] .. "\n")
 		end
 		f_out:close()
+	end
+	if USE_GEOVIEW == "1" and geosite_arg ~= "" and api.is_finded("geoview") then
+		get_geosite(geosite_arg, file_block_host)
+		log("  * 解析[屏蔽列表] Geosite 到屏蔽域名表(blocklist)完成")
 	end
 end
 if USE_BLOCK_LIST == "1" and is_file_nonzero(file_block_host) then
@@ -289,12 +300,18 @@ end
 
 --直连（白名单）列表
 local file_direct_host = TMP_ACL_PATH .. "/direct_host"
-if USE_DIRECT_LIST == "1" and not fs.access(file_direct_host) then   --对自定义列表进行清洗
+if USE_DIRECT_LIST == "1" and not fs.access(file_direct_host) then
 	local direct_domain, lookup_direct_domain = {}, {}
+	local geosite_arg = ""
 	for line in io.lines(RULES_PATH .. "/direct_host") do
-		line = api.get_std_domain(line)
-		if line ~= "" and not line:find("#") then
-			insert_unique(direct_domain, line, lookup_direct_domain)
+		if not line:find("#") and line:find("geosite:") then
+			line = string.match(line, ":([^:]+)$")
+			geosite_arg = geosite_arg .. (geosite_arg ~= "" and "," or "") .. line
+		else
+			line = api.get_std_domain(line)
+			if line ~= "" and not line:find("#") then
+				insert_unique(direct_domain, line, lookup_direct_domain)
+			end
 		end
 	end
 	if #direct_domain > 0 then
@@ -303,6 +320,10 @@ if USE_DIRECT_LIST == "1" and not fs.access(file_direct_host) then   --对自定
 			f_out:write(direct_domain[i] .. "\n")
 		end
 		f_out:close()
+	end
+	if USE_GEOVIEW == "1" and geosite_arg ~= "" and api.is_finded("geoview") then
+		get_geosite(geosite_arg, file_direct_host)
+		log("  * 解析[直连列表] Geosite 到域名白名单(whitelist)完成")
 	end
 end
 if USE_DIRECT_LIST == "1" and is_file_nonzero(file_direct_host) then
@@ -320,12 +341,18 @@ end
 
 --代理（黑名单）列表
 local file_proxy_host = TMP_ACL_PATH .. "/proxy_host"
-if USE_PROXY_LIST == "1" and not fs.access(file_proxy_host) then   --对自定义列表进行清洗
+if USE_PROXY_LIST == "1" and not fs.access(file_proxy_host) then
 	local proxy_domain, lookup_proxy_domain = {}, {}
+	local geosite_arg = ""
 	for line in io.lines(RULES_PATH .. "/proxy_host") do
-		line = api.get_std_domain(line)
-		if line ~= "" and not line:find("#") then
-			insert_unique(proxy_domain, line, lookup_proxy_domain)
+		if not line:find("#") and line:find("geosite:") then
+			line = string.match(line, ":([^:]+)$")
+			geosite_arg = geosite_arg .. (geosite_arg ~= "" and "," or "") .. line
+		else
+			line = api.get_std_domain(line)
+			if line ~= "" and not line:find("#") then
+				insert_unique(proxy_domain, line, lookup_proxy_domain)
+			end
 		end
 	end
 	if #proxy_domain > 0 then
@@ -334,6 +361,10 @@ if USE_PROXY_LIST == "1" and not fs.access(file_proxy_host) then   --对自定�
 			f_out:write(proxy_domain[i] .. "\n")
 		end
 		f_out:close()
+	end
+	if USE_GEOVIEW == "1" and geosite_arg ~= "" and api.is_finded("geoview") then
+		get_geosite(geosite_arg, file_proxy_host)
+		log("  * 解析[代理列表] Geosite 到代理域名表(blacklist)完成")
 	end
 end
 if USE_PROXY_LIST == "1" and is_file_nonzero(file_proxy_host) then
@@ -419,8 +450,8 @@ if uci:get(appname, TCP_NODE, "protocol") == "_shunt" then
 	local t = uci:get_all(appname, TCP_NODE)
 	local default_node_id = t["default_node"] or "_direct"
 	uci:foreach(appname, "shunt_rules", function(s)
-		local _node_id = t[s[".name"]] or "nil"
-		if _node_id ~= "nil" and _node_id ~= "_blackhole" then
+		local _node_id = t[s[".name"]]
+		if _node_id and _node_id ~= "_blackhole" then
 			if _node_id == "_default" then
 				_node_id = default_node_id
 			end
@@ -477,14 +508,14 @@ if uci:get(appname, TCP_NODE, "protocol") == "_shunt" then
 		end
 	end
 
-	local use_geoview = uci:get(appname, "@global_rules[0]", "enable_geoview")
-	if USE_GFW_LIST == "1" and CHN_LIST == "0" and use_geoview == "1" then  --仅GFW模式解析geosite
+	if USE_GFW_LIST == "1" and CHN_LIST == "0" and USE_GEOVIEW == "1" and api.is_finded("geoview") then  --仅GFW模式解析geosite
 		if geosite_white_arg ~= "" then
 			get_geosite(geosite_white_arg, file_white_host)
 		end
 		if geosite_shunt_arg ~= "" then
 			get_geosite(geosite_shunt_arg, file_shunt_host)
 		end
+		log("  * 解析[分流节点] Geosite 完成")
 	end
 
 	if is_file_nonzero(file_white_host) then
@@ -535,7 +566,7 @@ if #config_lines > 0 then
 end
 
 if DEFAULT_DNS_GROUP then
-	log(string.format("  - 默认分组：%s", DEFAULT_DNS_GROUP))
+	log(string.format("  - 默认 DNS 分组：%s", DEFAULT_DNS_GROUP))
 end
 
 fs.symlink(CACHE_DNS_FILE, SMARTDNS_CONF)
