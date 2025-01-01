@@ -1,6 +1,6 @@
 module("luci.passwall.util_sing-box", package.seeall)
 local api = require "luci.passwall.api"
-local uci = api.uci
+local uci = api.libuci
 local sys = api.sys
 local jsonc = api.jsonc
 local appname = "passwall"
@@ -762,6 +762,7 @@ function gen_config(var)
 	local remote_dns_tcp_server = var["-remote_dns_tcp_server"]
 	local remote_dns_doh_url = var["-remote_dns_doh_url"]
 	local remote_dns_doh_host = var["-remote_dns_doh_host"]
+	local remote_dns_client_ip = var["-remote_dns_client_ip"]
 	local remote_dns_query_strategy = var["-remote_dns_query_strategy"]
 	local remote_dns_fake = var["-remote_dns_fake"]
 	local dns_cache = var["-dns_cache"]
@@ -959,7 +960,7 @@ function gen_config(var)
 					rule_outboundTag = "block"
 				elseif _node_id == "_default" and rule_name ~= "default" then
 					rule_outboundTag = "default"
-				elseif _node_id:find("Socks_") then
+				elseif _node_id and _node_id:find("Socks_") then
 					local socks_id = _node_id:sub(1 + #"Socks_")
 					local socks_node = uci:get_all(appname, socks_id) or nil
 					if socks_node then
@@ -1278,6 +1279,7 @@ function gen_config(var)
 			strategy = remote_strategy,
 			address_resolver = "direct",
 			detour = default_outTag,
+			client_subnet = (remote_dns_client_ip and remote_dns_client_ip ~= "") and remote_dns_client_ip or nil,
 		}
 
 		if remote_dns_udp_server then
@@ -1317,7 +1319,7 @@ function gen_config(var)
 			experimental.cache_file = {
 				enabled = true,
 				store_fakeip = true,
-				path = "/tmp/singbox_passwall_" .. flag .. ".db"
+				path = api.CACHE_PATH .. "/singbox_" .. flag .. ".db"
 			}
 		end
 	
